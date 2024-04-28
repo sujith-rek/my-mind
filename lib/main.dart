@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 
 void main() {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final storage = FlutterSecureStorage();
 
   // This widget is the root of your application.
   @override
@@ -55,71 +65,130 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  int _input = 0;
+  String _password = '';
+  bool _isPasswordSetVariable = false;
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  final TextEditingController _controller = TextEditingController();
+  final storage = FlutterSecureStorage();
+
+  late Future<bool> _fetchInitialDataFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchInitialDataFuture = _fetchInitialData();
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
+    return FutureBuilder(
+      future: _fetchInitialDataFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.done) {
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(widget.title),
             ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            body: Column(
+              children: <Widget>[
+                TextField(
+                  controller: _controller,
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    _input = int.parse(_controller.text);
+                    _isPasswordSetVariable
+                        ? _isPasswordCorrect()
+                        : _setPassword();
+                  },
+                  child: Text(_isPasswordSetVariable
+                      ? 'Check password'
+                      : 'Set password'),
+                ),
+                if (_isPasswordSetVariable)
+                  ElevatedButton(
+                    onPressed: _resetPassword,
+                    child: const Text('Reset password'),
+                  ),
+              ],
+            ),
+          );
+        } else {
+          return const CircularProgressIndicator(); // Show a loading spinner while waiting for _fetchInitialData to complete
+        }
+      },
+    );
+  }
+
+  void _setPassword() async {
+    final bytes = utf8.encode(_input.toString());
+    final digest = sha256.convert(bytes);
+    await storage.write(key: 'password', value: digest.toString());
+
+    _showDialog('Password Set', 'Your password has been set.');
+  }
+
+  void _showDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
             ),
           ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+        );
+      },
     );
+  }
+
+  void _resetPassword() async {
+    await storage.delete(key: 'password');
+    _showDialog('Password Reset', 'Your password has been reset.');
+  }
+
+  void _isPasswordCorrect() {
+    final bytes = utf8.encode(_input.toString());
+    final digest = sha256.convert(bytes);
+    bool isCorrect = digest.toString() == _password;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(isCorrect ? 'Correct Password' : 'Incorrect Password'),
+          content: Text(isCorrect
+              ? 'You have entered the correct password.'
+              : 'The password you entered is incorrect.'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  
+  Future<bool> _fetchInitialData() async {
+    final password = await storage.read(key: 'password');
+    if (password != null) {
+      _password = password;
+      _isPasswordSetVariable = true;
+    } else {
+      _isPasswordSetVariable = false;
+    }
+    return true;
   }
 }
