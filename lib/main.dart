@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
+import 'restart.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const RestartWidget(child: MyApp()));
 }
 
 class MyApp extends StatefulWidget {
@@ -15,29 +16,11 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  final storage = FlutterSecureStorage();
-
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'My Mind',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
@@ -48,16 +31,6 @@ class _MyAppState extends State<MyApp> {
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
   final String title;
 
   @override
@@ -70,7 +43,7 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isPasswordSetVariable = false;
 
   final TextEditingController _controller = TextEditingController();
-  final storage = FlutterSecureStorage();
+  final storage = const FlutterSecureStorage();
 
   late Future<bool> _fetchInitialDataFuture;
 
@@ -115,7 +88,7 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           );
         } else {
-          return const CircularProgressIndicator(); // Show a loading spinner while waiting for _fetchInitialData to complete
+          return const CircularProgressIndicator();
         }
       },
     );
@@ -126,11 +99,42 @@ class _MyHomePageState extends State<MyHomePage> {
     final digest = sha256.convert(bytes);
     await storage.write(key: 'password', value: digest.toString());
 
-    _showDialog('Password Set', 'Your password has been set.');
+    await _showDialog('Password Set', 'Your password has been set.');
+    _restartApp();
   }
 
-  void _showDialog(String title, String content) {
-    showDialog(
+  void _resetPassword() async {
+    await storage.delete(key: 'password');
+    await _showDialog('Password Reset', 'Your password has been reset.');
+    _restartApp();
+  }
+
+  void _isPasswordCorrect() {
+    final bytes = utf8.encode(_input.toString());
+    final digest = sha256.convert(bytes);
+    bool isCorrect = digest.toString() == _password;
+
+    _showDialog('Password Check',
+        isCorrect ? 'The password is correct.' : 'The password is incorrect.');
+  }
+
+  void _restartApp() {
+    RestartWidget.restartApp(context);
+  }
+
+  Future<bool> _fetchInitialData() async {
+    final password = await storage.read(key: 'password');
+    if (password != null) {
+      _password = password;
+      _isPasswordSetVariable = true;
+    } else {
+      _isPasswordSetVariable = false;
+    }
+    return true;
+  }
+
+  Future<void> _showDialog(String title, String content) {
+    return showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
@@ -147,48 +151,5 @@ class _MyHomePageState extends State<MyHomePage> {
         );
       },
     );
-  }
-
-  void _resetPassword() async {
-    await storage.delete(key: 'password');
-    _showDialog('Password Reset', 'Your password has been reset.');
-  }
-
-  void _isPasswordCorrect() {
-    final bytes = utf8.encode(_input.toString());
-    final digest = sha256.convert(bytes);
-    bool isCorrect = digest.toString() == _password;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(isCorrect ? 'Correct Password' : 'Incorrect Password'),
-          content: Text(isCorrect
-              ? 'You have entered the correct password.'
-              : 'The password you entered is incorrect.'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('OK'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  
-  Future<bool> _fetchInitialData() async {
-    final password = await storage.read(key: 'password');
-    if (password != null) {
-      _password = password;
-      _isPasswordSetVariable = true;
-    } else {
-      _isPasswordSetVariable = false;
-    }
-    return true;
   }
 }
